@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 
+# Licence:
+#
+# "THE BEER-WARE LICENSE" (Revision 42):
+# <julien.cigar@gmail.com> wrote this file. As long as you retain this notice
+# you can do whatever you want with this stuff. If we meet some day, and you
+# think this stuff is worth it, you can buy me a beer in return.
+
 import json
 import sys
 import xml.etree.ElementTree as et
@@ -70,6 +77,10 @@ class Serializer(object):
             raise ValueError('You must specify either include_colums or '
                              'exclude_columns')
 
+        if exclude_relations is None and include_relations is None:
+            raise ValueError('You must specify either include_relations or '
+                             'exclude_relations')
+
         # Iterate on all MapperProperty objects.
         # A mapped column is represented as an instance of ColumnProperty and a
         # relationship() is represented as an instance of RelationshipProperty.
@@ -77,21 +88,22 @@ class Serializer(object):
             # An object attribute that corresponds to a table column 
             # Public constructor is the orm.column_property() function.
             if isinstance(prop, orm.properties.ColumnProperty) and\
-            ((include_columns is True or prop.key in include_columns) or\
-             (include_columns is None and prop.key not in exclude_columns)):
+            ((include_columns is True or (not include_columns in (None, False) and prop.key in include_columns)) or\
+             (include_columns is None and (exclude_columns is not None and prop.key not in exclude_columns))):
                 data[prop.key] = encoder(getattr(self.obj, prop.key))
 
             # An object property that holds a single item or list of items that
             # correspond to a related database table.
             elif isinstance(prop, orm.properties.RelationshipProperty) and\
-            ((include_relations is True or prop.key in include_relations) or\
-             (include_columns is None and prop.key not in exclude_relations)):
+            ((include_relations is True or (not include_relations in (None, False) and prop.key in include_relations)) or\
+             (include_relations is None and (exclude_relations is not None and prop.key not in exclude_relations))):
                 obj = getattr(self.obj, prop.key)
 
                 # A many-to-many relationship (secondary=)
                 if isinstance(obj, orm.collections.InstrumentedList):
-                    data[prop.key] = [self.__class__(i).dict(encoder)\
-                                      for i in obj]
+                    data[prop.key] = [self.__class__(i).dict(encoder,
+                                      include_columns=True,
+                                      include_relations=False) for i in obj]
                 elif isinstance(obj, orm.dynamic.AppenderMixin):
                     # TODO
                     pass
@@ -99,7 +111,8 @@ class Serializer(object):
                     # TODO
                     pass
                 elif obj is not None:
-                    data[prop.key] = self.__class__(obj).dict(encoder)
+                    data[prop.key] = self.__class__(obj).dict(encoder,
+                        include_columns=True, include_relations=False)
 
         return data
 
@@ -123,7 +136,7 @@ class Serializer(object):
 
         root = et.Element('content')
 
-        for (key, value) in self.dict(converter, **kwargs).iteritems():
+        for (key, value) in self.dict(encoder, **kwargs).iteritems():
             _build_node(key, value, root)
 
         tree = et.ElementTree(root)
